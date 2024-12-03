@@ -9,6 +9,8 @@ from .testing_shared_functions import check_list_inference_images_similarity, ch
 
 
 class TestHordeInference:
+
+    @pytest.mark.default_sd15_model
     def test_text_to_image(
         self,
         hordelib_instance: HordeLib,
@@ -45,6 +47,44 @@ class TestHordeInference:
             pil_image,
         )
 
+    @pytest.mark.default_sd15_model
+    def test_text_to_image_max_resolution(
+        self,
+        hordelib_instance: HordeLib,
+        stable_diffusion_model_name_for_testing: str,
+    ):
+        data = {
+            "sampler_name": "k_dpmpp_2m",
+            "cfg_scale": 7.5,
+            "denoising_strength": 1.0,
+            "seed": 123456789,
+            "height": 2048,
+            "width": 2048,
+            "karras": False,
+            "tiling": False,
+            "hires_fix": False,
+            "clip_skip": 1,
+            "control_type": None,
+            "image_is_control": False,
+            "return_control_map": False,
+            "prompt": "an ancient llamia monster",
+            "ddim_steps": 5,
+            "n_iter": 1,
+            "model": stable_diffusion_model_name_for_testing,
+        }
+        pil_image = hordelib_instance.basic_inference_single_image(data).image
+        assert pil_image is not None
+        assert isinstance(pil_image, Image.Image)
+
+        img_filename = "text_to_image_max_resolution.png"
+        pil_image.save(f"images/{img_filename}", quality=100)
+
+        assert check_single_inference_image_similarity(
+            f"images_expected/{img_filename}",
+            pil_image,
+        )
+
+    @pytest.mark.default_sd15_model
     def test_text_to_image_n_iter(
         self,
         hordelib_instance: HordeLib,
@@ -93,6 +133,7 @@ class TestHordeInference:
 
         assert check_list_inference_images_similarity(img_pairs_to_check)
 
+    @pytest.mark.default_sdxl_model
     def test_sdxl_text_to_image(
         self,
         hordelib_instance: HordeLib,
@@ -130,6 +171,44 @@ class TestHordeInference:
             pil_image,
         )
 
+    @pytest.mark.refined_sdxl_model
+    def test_sdxl_text_to_image_hires_fix(
+        self,
+        hordelib_instance: HordeLib,
+        sdxl_refined_model_name: str,
+    ):
+        data = {
+            "sampler_name": "k_dpmpp_2m",
+            "cfg_scale": 7.5,
+            "denoising_strength": 1.0,
+            "seed": 123456789,
+            "height": 1536,
+            "width": 1280,
+            "karras": False,
+            "tiling": False,
+            "hires_fix": True,
+            "clip_skip": 1,
+            "control_type": None,
+            "image_is_control": False,
+            "return_control_map": False,
+            "prompt": "an ancient llamia monster",
+            "ddim_steps": 25,
+            "n_iter": 1,
+            "model": sdxl_refined_model_name,
+        }
+        pil_image = hordelib_instance.basic_inference_single_image(data).image
+        assert pil_image is not None
+        assert isinstance(pil_image, Image.Image)
+
+        img_filename = "sdxl_text_to_image_hires_fix.png"
+        pil_image.save(f"images/{img_filename}", quality=100)
+
+        assert check_single_inference_image_similarity(
+            f"images_expected/{img_filename}",
+            pil_image,
+        )
+
+    @pytest.mark.default_sdxl_model
     @pytest.mark.skip(reason="This test is too slow to run on every test run")
     def test_sdxl_text_to_image_recommended_resolutions(
         self,
@@ -186,6 +265,7 @@ class TestHordeInference:
                 pil_image,
             )
 
+    @pytest.mark.default_sd15_model
     def test_text_to_image_small(
         self,
         hordelib_instance: HordeLib,
@@ -222,6 +302,7 @@ class TestHordeInference:
             pil_image,
         )
 
+    @pytest.mark.default_sd15_model
     def test_text_to_image_clip_skip_2(
         self,
         hordelib_instance: HordeLib,
@@ -258,6 +339,7 @@ class TestHordeInference:
             pil_image,
         )
 
+    @pytest.mark.default_sd15_model
     def test_text_to_image_hires_fix(
         self,
         hordelib_instance: HordeLib,
@@ -294,6 +376,7 @@ class TestHordeInference:
             pil_image,
         )
 
+    @pytest.mark.default_sd15_model
     def test_text_to_image_tiling(
         self,
         hordelib_instance: HordeLib,
@@ -343,6 +426,7 @@ class TestHordeInference:
             pil_image_no_tiling,
         )
 
+    @pytest.mark.default_sd15_model
     def test_text_to_image_hires_fix_n_iter(
         self,
         hordelib_instance: HordeLib,
@@ -386,6 +470,7 @@ class TestHordeInference:
 
         assert check_list_inference_images_similarity(img_pairs_to_check)
 
+    @pytest.mark.default_sd15_model
     def test_callback_with_post_processors(
         self,
         hordelib_instance: HordeLib,

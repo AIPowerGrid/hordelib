@@ -11,7 +11,9 @@ import typing
 from collections.abc import Callable
 from copy import deepcopy
 from enum import Enum, auto
+from types import FunctionType
 
+from horde_model_reference.meta_consts import STABLE_DIFFUSION_BASELINE_CATEGORY, get_baseline_native_resolution
 from horde_sdk.ai_horde_api.apimodels import ImageGenerateJobPopResponse
 from horde_sdk.ai_horde_api.apimodels.base import (
     GenMetadataEntry,
@@ -23,6 +25,7 @@ from pydantic import BaseModel
 
 from hordelib.comfy_horde import Comfy_Horde
 from hordelib.consts import MODEL_CATEGORY_NAMES
+from hordelib.nodes.comfy_qr.qr_nodes import QRByModuleSizeSplitFunctionPatterns
 from hordelib.shared_model_manager import SharedModelManager
 from hordelib.utils.dynamicprompt import DynamicPromptParser
 from hordelib.utils.image_utils import ImageUtils
@@ -74,6 +77,57 @@ class ResultingImageReturn:
         self.image = image
         self.rawpng = rawpng
         self.faults = faults
+
+
+def _calc_upscale_sampler_steps(
+    payload: dict,
+) -> int:
+    """Use `ImageUtils.calc_upscale_sampler_steps(...)` to calculate the number of steps for the upscale sampler.
+
+    Args:
+        payload (dict): The payload to use for the calculation.
+
+    Returns:
+        int: The number of steps to use.
+    """
+    model_name = payload.get("model_name")
+    baseline = None
+    native_resolution = None
+    if model_name is not None:
+        baseline = SharedModelManager.model_reference_manager.stable_diffusion.get_model_baseline(model_name)
+    if baseline is not None:
+        try:
+            baseline = STABLE_DIFFUSION_BASELINE_CATEGORY(baseline)
+        except ValueError:
+            baseline = None
+            logger.warning(
+                f"Model {model_name} has an invalid baseline {baseline} so we cannot calculate "
+                "hires fix upscale steps.",
+            )
+        if baseline is not None:
+            native_resolution = get_baseline_native_resolution(baseline)
+
+    width: int | None = payload.get("width")
+    height: int | None = payload.get("height")
+    hires_fix_denoising_strength: float | None = payload.get("hires_fix_denoising_strength")
+    ddim_steps: int | None = payload.get("ddim_steps")
+
+    if width is None or height is None:
+        raise ValueError("Width and height must be set to calculate upscale sampler steps")
+
+    if hires_fix_denoising_strength is None:
+        raise ValueError("Hires fix denoising strength must be set to calculate upscale sampler steps")
+
+    if ddim_steps is None:
+        raise ValueError("DDIM steps must be set to calculate upscale sampler steps")
+
+    return ImageUtils.calc_upscale_sampler_steps(
+        model_native_resolution=native_resolution,
+        width=width,
+        height=height,
+        hires_fix_denoising_strength=hires_fix_denoising_strength,
+        ddim_steps=ddim_steps,
+    )
 
 
 class HordeLib:
@@ -145,7 +199,7 @@ class HordeLib:
         "sampler_name": {"datatype": str, "values": list(SAMPLERS_MAP.keys()), "default": "k_euler"},
         "cfg_scale": {"datatype": float, "min": 1, "max": 100, "default": 8.0},
         "denoising_strength": {"datatype": float, "min": 0.01, "max": 1.0, "default": 1.0},
-        "control_strength": {"datatype": float, "min": 0.01, "max": 1.0, "default": 1.0},
+        "control_strength": {"datatype": float, "min": 0.01, "max": 3.0, "default": 1.0},
         "seed": {"datatype": int, "default": random.randint(0, sys.maxsize)},
         "width": {"datatype": int, "min": 64, "max": 8192, "default": 512, "divisible": 64},
         "height": {"datatype": int, "min": 64, "max": 8192, "default": 512, "divisible": 64},
@@ -171,11 +225,19 @@ class HordeLib:
         "stable_cascade_stage_b": {"datatype": str, "default": None},  # Stable Cascade
         "stable_cascade_stage_c": {"datatype": str, "default": None},  # Stable Cascade
         "extra_source_images": {"datatype": list, "default": []},  # Stable Cascade Remix
+        "extra_texts": {"datatype": list, "default": []},  # QR Codes (for now)
+        "workflow": {"datatype": str, "default": "auto_detect"},
+        "transparent": {"datatype": bool, "default": False},
     }
 
     EXTRA_IMAGES_SCHEMA = {
         "image": {"datatype": Image.Image, "default": None},
         "strength": {"datatype": float, "min": 0.0, "max": 5.0, "default": 1.0},
+    }
+
+    EXTRA_TEXTS_SCHEMA = {
+        "text": {"datatype": str, "default": ""},
+        "reference": {"datatype": str, "default": None},
     }
 
     LORA_SCHEMA = {
@@ -193,11 +255,12 @@ class HordeLib:
     }
 
     # pipeline parameter <- hordelib payload parameter mapping
-    PAYLOAD_TO_PIPELINE_PARAMETER_MAPPING = {  # FIXME
+    PAYLOAD_TO_PIPELINE_PARAMETER_MAPPING: dict[str, str | Callable] = {  # FIXME
         "sampler.sampler_name": "sampler_name",
         "sampler.cfg": "cfg_scale",
         "sampler.denoise": "denoising_strength",
         "sampler.seed": "seed",
+        "sampler.noise_seed": "seed",
         "empty_latent_image.height": "height",
         "empty_latent_image.width": "width",
         "sampler.scheduler": "scheduler",
@@ -217,10 +280,16 @@ class HordeLib:
         "upscale_sampler.denoise": "hires_fix_denoising_strength",
         "upscale_sampler.seed": "seed",
         "upscale_sampler.cfg": "cfg_scale",
-        "upscale_sampler.steps": "ddim_steps",
+        "upscale_sampler.steps": _calc_upscale_sampler_steps,
         "upscale_sampler.sampler_name": "sampler_name",
         "controlnet_apply.strength": "control_strength",
         "controlnet_model_loader.control_net_name": "control_type",
+        # Flux
+        "cfg_guider.cfg": "cfg_scale",
+        "random_noise.noise_seed": "seed",
+        "k_sampler_select.sampler_name": "sampler_name",
+        "basic_scheduler.denoise": "denoising_strength",
+        "basic_scheduler.steps": "ddim_steps",
         # Stable Cascade
         "stable_cascade_empty_latent_image.width": "width",
         "stable_cascade_empty_latent_image.height": "height",
@@ -233,12 +302,41 @@ class HordeLib:
         "sampler_stage_c.denoise": "denoising_strength",
         "sampler_stage_b.seed": "seed",
         "sampler_stage_c.seed": "seed",
+        "sampler_stage_b.steps": "ddim_steps*0.33",
+        "sampler_stage_c.steps": "ddim_steps*0.67",
         "model_loader_stage_c.ckpt_name": "stable_cascade_stage_c",
         "model_loader_stage_c.model_name": "stable_cascade_stage_c",
         "model_loader_stage_c.horde_model_name": "model_name",
         "model_loader_stage_b.ckpt_name": "stable_cascade_stage_b",
         "model_loader_stage_b.model_name": "stable_cascade_stage_b",
         "model_loader_stage_b.horde_model_name": "model_name",
+        # Stable Cascade 2pass
+        "2pass_sampler_stage_c.sampler_name": "sampler_name",
+        "2pass_sampler_stage_c.steps": "ddim_steps*0.67",
+        "2pass_sampler_stage_c.denoise": "hires_fix_denoising_strength",
+        "2pass_sampler_stage_b.sampler_name": "sampler_name",
+        "2pass_sampler_stage_b.steps": "ddim_steps*0.33",
+        # QR Codes
+        "sampler_bg.sampler_name": "sampler_name",
+        "sampler_bg.cfg": "cfg_scale",
+        "sampler_bg.denoise": "denoising_strength",
+        "sampler_bg.seed": "seed",
+        "sampler_bg.steps": "ddim_steps",
+        "sampler_bg.noise_seed": "seed",
+        "sampler_fg.sampler_name": "sampler_name",
+        "sampler_fg.cfg": "cfg_scale",
+        "sampler_fg.denoise": "denoising_strength",
+        "sampler_fg.seed": "seed",
+        "sampler_fg.steps": "ddim_steps",
+        "sampler_fg.noise_seed": "seed",
+        "controlnet_bg.strength": "control_strength",
+        "solidmask_grey.width": "width",
+        "solidmask_grey.height": "height",
+        "solidmask_white.width": "width",
+        "solidmask_white.height": "height",
+        "solidmask_black.width": "width",
+        "solidmask_black.height": "height",
+        "qr_code_split.max_image_size": "width",
     }
 
     _comfyui_callback: Callable[[str, dict, str], None] | None = None
@@ -248,10 +346,12 @@ class HordeLib:
         cls,
         *,
         comfyui_callback: Callable[[str, dict, str], None] | None = None,
+        aggressive_unloading: bool = True,
     ):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._comfyui_callback = comfyui_callback
+            cls.aggressive_unloading = aggressive_unloading
 
         return cls._instance
 
@@ -260,10 +360,16 @@ class HordeLib:
         self,
         *,
         comfyui_callback: Callable[[str, dict, str], None] | None = None,
+        aggressive_unloading: bool | None = True,
+        # If you add any more parameters here, you should also add them to __new__ above
+        # and follow the same pattern
     ):
         if not self._initialised:
             self.generator = Comfy_Horde(
                 comfyui_callback=comfyui_callback if comfyui_callback else self._comfyui_callback,
+                aggressive_unloading=(
+                    aggressive_unloading if aggressive_unloading is not None else self.aggressive_unloading
+                ),
             )
             self.__class__._initialised = True
 
@@ -351,6 +457,12 @@ class HordeLib:
             for i, img in enumerate(data.get("extra_source_images")):
                 data["extra_source_images"][i] = self._validate_data_structure(img, HordeLib.EXTRA_IMAGES_SCHEMA)
             data["extra_source_images"] = [x for x in data["extra_source_images"] if x.get("image")]
+
+        # Do the same for extra texts, if we have them in this data structure
+        if data.get("extra_texts"):
+            for i, img in enumerate(data.get("extra_texts")):
+                data["extra_texts"][i] = self._validate_data_structure(img, HordeLib.EXTRA_TEXTS_SCHEMA)
+            data["extra_texts"] = [x for x in data["extra_texts"] if x.get("text")]
 
         return data
 
@@ -478,8 +590,15 @@ class HordeLib:
 
         # Turn off hires fix if we're not generating a hires image, or if the params are just confused
         try:
-            if "hires_fix" in payload and (payload["width"] <= 512 or payload["height"] <= 512):
-                payload["hires_fix"] = False
+            if "hires_fix" in payload:
+                if SharedModelManager.manager.compvis.model_reference[model].get(
+                    "baseline",
+                ) == "stable diffusion 1" and (payload["width"] <= 512 or payload["height"] <= 512):
+                    payload["hires_fix"] = False
+                elif SharedModelManager.manager.compvis.model_reference[model].get(
+                    "baseline",
+                ) == "stable_diffusion_xl" and (payload["width"] <= 1024 or payload["height"] <= 1024):
+                    payload["hires_fix"] = False
         except (TypeError, KeyError):
             payload["hires_fix"] = False
 
@@ -492,6 +611,11 @@ class HordeLib:
         # Use denoising strength for both samplers if no second denoiser specified
         # but not for txt2img where denoising will always generally be 1.0
         if payload.get("hires_fix"):
+            if payload.get("source_processing") and payload.get("source_processing") != "txt2img":
+                if not payload.get("hires_fix_denoising_strength"):
+                    payload["hires_fix_denoising_strength"] = payload.get("denoising_strength")
+
+        if payload.get("workflow") == "qr_code":
             if payload.get("source_processing") and payload.get("source_processing") != "txt2img":
                 if not payload.get("hires_fix_denoising_strength"):
                     payload["hires_fix_denoising_strength"] = payload.get("denoising_strength")
@@ -738,21 +862,41 @@ class HordeLib:
                     )
 
                 # The last LORA always connects to the sampler and clip text encoders (via the clip_skip)
-                if lora_index == len(payload.get("loras")) - 1:
-                    self.generator.reconnect_input(pipeline_data, "sampler.model", f"lora_{lora_index}")
-                    self.generator.reconnect_input(pipeline_data, "upscale_sampler.model", f"lora_{lora_index}")
-                    self.generator.reconnect_input(pipeline_data, "clip_skip.clip", f"lora_{lora_index}")
+                if lora_index == len(payload.get("loras")) - 1 and SharedModelManager.manager.compvis:
+                    model_details = SharedModelManager.manager.compvis.get_model_reference_info(payload["model_name"])
+                    if model_details is not None and model_details["baseline"] == "flux_1":
+                        self.generator.reconnect_input(pipeline_data, "cfg_guider.model", f"lora_{lora_index}")
+                        self.generator.reconnect_input(pipeline_data, "basic_scheduler.model", f"lora_{lora_index}")
+                    else:
+                        self.generator.reconnect_input(pipeline_data, "sampler.model", f"lora_{lora_index}")
+                        self.generator.reconnect_input(pipeline_data, "upscale_sampler.model", f"lora_{lora_index}")
+                        self.generator.reconnect_input(pipeline_data, "clip_skip.clip", f"lora_{lora_index}")
 
         # Translate the payload parameters into pipeline parameters
         pipeline_params = {}
         for newkey, key in HordeLib.PAYLOAD_TO_PIPELINE_PARAMETER_MAPPING.items():
+            multiplier = None
+            # We allow a multiplier in the param, so that I can adjust easily the
+            # values for steps on things like stable cascade
+            if isinstance(key, FunctionType):
+                pipeline_params[newkey] = key(payload)
+            elif not isinstance(key, str):
+                logger.error(f"Invalid key {key}")
+                raise RuntimeError(f"Invalid key {key}")
+            elif "*" in key:
+                key, multiplier = key.split("*", 1)
+
             if key in payload:
-                pipeline_params[newkey] = payload.get(key)
-            else:
+                if multiplier:
+                    pipeline_params[newkey] = round(payload.get(key) * float(multiplier))
+                else:
+                    pipeline_params[newkey] = payload.get(key)
+            elif not isinstance(key, FunctionType):
                 logger.error(f"Parameter {key} not found")
+
         # We inject these parameters to ensure the HordeCheckpointLoader knows what file to load, if necessary
         # We don't want to hardcode this into the pipeline.json as we export this directly from ComfyUI
-        # and don't want to have to rememebr to re-add those keys
+        # and don't want to have to rememeber to re-add those keys
         if "model_loader_stage_c.ckpt_name" in pipeline_params:
             pipeline_params["model_loader_stage_c.file_type"] = "stable_cascade_stage_c"
         if "model_loader_stage_b.ckpt_name" in pipeline_params:
@@ -771,14 +915,56 @@ class HordeLib:
 
         # For hires fix, change the image sizes as we create an intermediate image first
         if payload.get("hires_fix", False):
-            width = pipeline_params.get("empty_latent_image.width", 0)
-            height = pipeline_params.get("empty_latent_image.height", 0)
-            if width > 512 and height > 512:
-                newwidth, newheight = ImageUtils.calculate_source_image_size(width, height)
-                pipeline_params["latent_upscale.width"] = width
-                pipeline_params["latent_upscale.height"] = height
-                pipeline_params["empty_latent_image.width"] = newwidth
-                pipeline_params["empty_latent_image.height"] = newheight
+            model_details = (
+                SharedModelManager.manager.compvis.get_model_reference_info(payload["model_name"])
+                if SharedModelManager.manager.compvis
+                else None
+            )
+
+            original_width = pipeline_params.get("empty_latent_image.width")
+            original_height = pipeline_params.get("empty_latent_image.height")
+
+            if original_width is None or original_height is None:
+                if model_details and model_details.get("baseline") == "stable diffusion 1":
+                    logger.error("empty_latent_image.width or empty_latent_image.height not found. Using 512x512.")
+                    original_width, original_height = (512, 512)
+                else:
+                    logger.error("empty_latent_image.width or empty_latent_image.height not found. Using 1024x1024.")
+                    original_width, original_height = (1024, 1024)
+
+            new_width, new_height = (None, None)
+            baseline = None
+            if model_details:
+                baseline = model_details.get("baseline")
+            if baseline:
+                if baseline == "stable_cascade":
+                    new_width, new_height = ImageUtils.get_first_pass_image_resolution_max(
+                        original_width,
+                        original_height,
+                    )
+                elif baseline == "stable_diffusion_xl":
+                    new_width, new_height = ImageUtils.get_first_pass_image_resolution_sdxl(
+                        original_width,
+                        original_height,
+                    )
+                else:  # fall through case; only `stable diffusion 1`` at time of writing
+                    new_width, new_height = ImageUtils.get_first_pass_image_resolution_min(
+                        original_width,
+                        original_height,
+                    )
+
+            # This is the *target* resolution
+            pipeline_params["latent_upscale.width"] = original_width
+            pipeline_params["latent_upscale.height"] = original_height
+
+            if new_width and new_height:
+                # This is the *first pass* resolution
+                pipeline_params["empty_latent_image.width"] = new_width
+                pipeline_params["empty_latent_image.height"] = new_height
+            else:
+                logger.error("Could not determine new image size for hires fix. Using 1024x1024.")
+                pipeline_params["empty_latent_image.width"] = 1024
+                pipeline_params["empty_latent_image.height"] = 1024
 
         if payload.get("control_type"):
             # Inject control net model manager
@@ -815,7 +1001,12 @@ class HordeLib:
         # We do this by reconnecting the nodes in the pipeline to make the input to the vae encoder
         # the source image instead of the latent noise generator
         if pipeline_params.get("image_loader.image"):
-            self.generator.reconnect_input(pipeline_data, "sampler.latent_image", "vae_encode")
+            if SharedModelManager.manager.compvis:
+                model_details = SharedModelManager.manager.compvis.get_model_reference_info(payload["model_name"])
+                if isinstance(model_details, dict) and model_details.get("baseline") == "flux_1":
+                    self.generator.reconnect_input(pipeline_data, "sampler_custom_advanced.latent_image", "vae_encode")
+                else:
+                    self.generator.reconnect_input(pipeline_data, "sampler.latent_image", "vae_encode")
         if pipeline_params.get("sc_image_loader.image"):
             self.generator.reconnect_input(
                 pipeline_data,
@@ -868,6 +1059,112 @@ class HordeLib:
                         f"unclip_conditioning_{node_index}",
                     )
 
+        # If we have a qr code request, we check for extra texts such as the generation url
+        if payload.get("workflow") == "qr_code":
+            original_width = pipeline_params.get("empty_latent_image.width", 512)
+            original_height = pipeline_params.get("empty_latent_image.height", 512)
+            pipeline_params["qr_code_split.max_image_size"] = max(original_width, original_height)
+            pipeline_params["qr_code_split.text"] = "https://haidra.net"
+            for text in payload.get("extra_texts"):
+                if text["reference"] in ["qr_code", "qr_text"]:
+                    pipeline_params["qr_code_split.text"] = text["text"]
+                if text["reference"] == "protocol" and text["text"].lower() in ["https", "http"]:
+                    pipeline_params["qr_code_split.protocol"] = text["text"].capitalize()
+                if text["reference"] == "module_drawer" and text["text"].lower() in [
+                    "square",
+                    "gapped square",
+                    "circle",
+                    "rounded",
+                    "vertical bars",
+                    "horizontal bars",
+                ]:
+                    pipeline_params["qr_code_split.module_drawer"] = text["text"].capitalize()
+                if text["reference"] == "function_layer_prompt":
+                    pipeline_params["function_layer_prompt.text"] = text["text"]
+                if text["reference"] == "x_offset" and text["text"].lstrip("-").isdigit():
+                    x_offset = int(text["text"])
+                    if x_offset < 0:
+                        x_offset = 10
+                    pipeline_params["qr_flattened_composite.x"] = x_offset
+                if text["reference"] == "y_offset" and text["text"].lstrip("-").isdigit():
+                    y_offset = int(text["text"])
+                    if y_offset < 0:
+                        y_offset = 10
+                    pipeline_params["qr_flattened_composite.y"] = y_offset
+                if text["reference"] == "qr_border" and text["text"].lstrip("-").isdigit():
+                    border = int(text["text"])
+                    if border < 0:
+                        border = 10
+                    pipeline_params["qr_code_split.border"] = border
+            if not pipeline_params.get("qr_code_split.protocol"):
+                pipeline_params["qr_code_split.protocol"] = "None"
+            if not pipeline_params.get("function_layer_prompt.text"):
+                pipeline_params["function_layer_prompt.text"] = payload["prompt"]
+            try:
+                test_qr = QRByModuleSizeSplitFunctionPatterns()
+                _, _, _, _, _, qr_size = test_qr.generate_qr(
+                    protocol=pipeline_params.get("qr_code_split.protocol"),
+                    text=pipeline_params["qr_code_split.text"],
+                    module_size=16,
+                    max_image_size=pipeline_params["qr_code_split.max_image_size"],
+                    fill_hexcolor="#FFFFFF",
+                    back_hexcolor="#000000",
+                    error_correction="High",
+                    border=1,
+                    module_drawer="Square",
+                )
+            except RuntimeError as err:
+                logger.error(err)
+                pipeline_params["qr_code_split.text"] = "This QR Code is too large for this image"
+                test_qr = QRByModuleSizeSplitFunctionPatterns()
+                qr_size = 624
+
+            if not pipeline_params.get("qr_flattened_composite.x"):
+                x_offset = int((original_width / 2) - qr_size / 2)
+                # I don't know why but through trial and error I've discovered that the QR codes
+                # are more legible when they're placed in an offset which is a multiple of 64
+                x_offset = x_offset - (x_offset % 64) if x_offset % 64 != 0 else x_offset
+                pipeline_params["qr_flattened_composite.x"] = x_offset
+            if pipeline_params.get("qr_flattened_composite.x", 0) > int((original_width) - qr_size):
+                pipeline_params["qr_flattened_composite.x"] = int((original_width) - qr_size) - 10
+            if not pipeline_params.get("qr_flattened_composite.y"):
+                y_offset = int((original_height / 2) - qr_size / 2)
+                y_offset = y_offset - (y_offset % 64) if y_offset % 64 != 0 else y_offset
+                pipeline_params["qr_flattened_composite.y"] = y_offset
+            if pipeline_params.get("qr_flattened_composite.y", 0) > int((original_height) - qr_size):
+                pipeline_params["qr_flattened_composite.y"] = int((original_height) - qr_size) - 10
+            pipeline_params["module_layer_composite.x"] = pipeline_params["qr_flattened_composite.x"]
+            pipeline_params["module_layer_composite.y"] = pipeline_params["qr_flattened_composite.y"]
+            pipeline_params["function_layer_composite.x"] = pipeline_params["qr_flattened_composite.x"]
+            pipeline_params["function_layer_composite.y"] = pipeline_params["qr_flattened_composite.y"]
+            pipeline_params["mask_composite.x"] = pipeline_params["qr_flattened_composite.x"]
+            pipeline_params["mask_composite.y"] = pipeline_params["qr_flattened_composite.y"]
+            if SharedModelManager.manager.compvis:
+                model_details = SharedModelManager.manager.compvis.get_model_reference_info(payload["model_name"])
+                if model_details and model_details.get("baseline") == "stable diffusion 1":
+                    pipeline_params["controlnet_qr_model_loader.control_net_name"] = (
+                        "control_v1p_sd15_qrcode_monster_v2.safetensors"
+                    )
+        if payload.get("transparent") is True:
+            # A transparent gen is basically a fancy lora
+            pipeline_params["model_loader.will_load_loras"] = True
+            if SharedModelManager.manager.compvis:
+                model_details = SharedModelManager.manager.compvis.get_model_reference_info(payload["model_name"])
+                # SD2, Cascade and SD3 not supported
+                if model_details and model_details.get("baseline") in ["stable diffusion 1", "stable_diffusion_xl"]:
+                    self.generator.reconnect_input(pipeline_data, "sampler.model", "layer_diffuse_apply")
+                    self.generator.reconnect_input(pipeline_data, "layer_diffuse_apply.model", "model_loader")
+                    self.generator.reconnect_input(pipeline_data, "output_image.images", "layer_diffuse_decode_rgba")
+                    self.generator.reconnect_input(pipeline_data, "layer_diffuse_decode_rgba.images", "vae_decode")
+                    if payload.get("hires_fix") is True:
+                        self.generator.reconnect_input(pipeline_data, "upscale_sampler.model", "layer_diffuse_apply")
+                    if model_details.get("baseline") == "stable diffusion 1":
+                        pipeline_params["layer_diffuse_apply.config"] = "SD15, Attention Injection, attn_sharing"
+                        pipeline_params["layer_diffuse_decode_rgba.sd_version"] = "SD15"
+                    else:
+                        pipeline_params["layer_diffuse_apply.config"] = "SDXL, Conv Injection"
+                        pipeline_params["layer_diffuse_decode_rgba.sd_version"] = "SDXL"
+
         return pipeline_params, faults
 
     def _get_appropriate_pipeline(self, params):
@@ -886,14 +1183,22 @@ class HordeLib:
         #     image_upscale
         #     stable_cascade
         #       stable_cascade_remix
+        #       stable_cascade_2pass
+        #     qr_code
 
         # controlnet, controlnet_hires_fix controlnet_annotator
+        if params.get("workflow") == "qr_code":
+            return "qr_code"
         if params.get("model_name"):
             model_details = SharedModelManager.manager.compvis.get_model_reference_info(params["model_name"])
             if model_details.get("baseline") == "stable_cascade":
                 if params.get("source_processing") == "remix":
                     return "stable_cascade_remix"
+                if params.get("hires_fix", False):
+                    return "stable_cascade_2pass"
                 return "stable_cascade"
+            if model_details.get("baseline") == "flux_1":
+                return "flux"
         if params.get("control_type"):
             if params.get("return_control_map", False):
                 return "controlnet_annotator"
@@ -1197,7 +1502,7 @@ class HordeLib:
 
             post_processed = []
             for ret in return_list:
-                single_image_faults = []
+                single_image_faults = faults[:]
                 final_image = ret.image
                 final_rawpng = ret.rawpng
 
@@ -1303,6 +1608,11 @@ class HordeLib:
 
     def image_upscale(self, payload) -> ResultingImageReturn:
         logger.debug("image_upscale called")
+
+        from hordelib.comfy_horde import log_free_ram
+
+        log_free_ram()
+
         # AIHorde hacks to payload
         payload, compatibility_faults = self._apply_aihorde_compatibility_hacks(payload)
         # Remember if we were passed width and height, we wouldn't normally be passed width and height
@@ -1336,10 +1646,16 @@ class HordeLib:
         if not isinstance(image, Image.Image):
             raise RuntimeError(f"Expected a PIL.Image.Image but got {type(image)}")
 
+        log_free_ram()
         return ResultingImageReturn(image=image, rawpng=rawpng, faults=compatibility_faults + final_adjustment_faults)
 
     def image_facefix(self, payload) -> ResultingImageReturn:
         logger.debug("image_facefix called")
+
+        from hordelib.comfy_horde import log_free_ram
+
+        log_free_ram()
+
         # AIHorde hacks to payload
         payload, compatibility_faults = self._apply_aihorde_compatibility_hacks(payload)
         # Check payload types/values and normalise it's format
@@ -1360,5 +1676,7 @@ class HordeLib:
         image, rawpng = results[0]
         if not isinstance(image, Image.Image):
             raise RuntimeError(f"Expected a PIL.Image.Image but got {type(image)}")
+
+        log_free_ram()
 
         return ResultingImageReturn(image=image, rawpng=rawpng, faults=compatibility_faults + final_adjustment_faults)

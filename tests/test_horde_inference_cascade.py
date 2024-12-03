@@ -1,5 +1,6 @@
 # test_horde.py
 
+import pytest
 from PIL import Image
 
 from hordelib.horde import HordeLib
@@ -10,6 +11,8 @@ from tests.testing_shared_functions import (
 
 
 class TestHordeInferenceCascade:
+
+    @pytest.mark.slow
     def test_cascade_text_to_image(
         self,
         hordelib_instance: HordeLib,
@@ -33,7 +36,7 @@ class TestHordeInferenceCascade:
                 "A magic glowing long sword lying flat on a medieval shop rack, in the style of Dungeons and Dragons. "
                 "Splash art, Digital Painting, ornate handle with gems"
             ),
-            "ddim_steps": 20,
+            "ddim_steps": 30,
             "n_iter": 1,
             "model": stable_cascade_base_model_name,
         }
@@ -50,6 +53,7 @@ class TestHordeInferenceCascade:
             pil_image,
         )
 
+    @pytest.mark.slow
     def test_cascade_text_to_image_n_iter(
         self,
         hordelib_instance: HordeLib,
@@ -73,7 +77,7 @@ class TestHordeInferenceCascade:
                 "A magic glowing long sword lying flat on a medieval shop rack, in the style of Dungeons and Dragons. "
                 "Splash art, Digital Painting, ornate handle with gems"
             ),
-            "ddim_steps": 20,
+            "ddim_steps": 30,
             "n_iter": 2,
             "model": stable_cascade_base_model_name,
         }
@@ -101,6 +105,7 @@ class TestHordeInferenceCascade:
 
         assert check_list_inference_images_similarity(img_pairs_to_check)
 
+    @pytest.mark.slow
     def test_cascade_image_to_image(
         self,
         stable_cascade_base_model_name: str,
@@ -124,7 +129,7 @@ class TestHordeInferenceCascade:
                 "a medieval fantasy swashbuckler with a big floppy hat walking towards "
                 "a camera while there's an explosion in the background"
             ),
-            "ddim_steps": 20,
+            "ddim_steps": 30,
             "n_iter": 2,
             "model": stable_cascade_base_model_name,
             "source_image": Image.open("images/test_db0.jpg"),
@@ -149,6 +154,7 @@ class TestHordeInferenceCascade:
 
         assert check_list_inference_images_similarity(img_pairs_to_check)
 
+    @pytest.mark.slow
     def test_cascade_image_remix_single(
         self,
         stable_cascade_base_model_name: str,
@@ -169,7 +175,7 @@ class TestHordeInferenceCascade:
             "image_is_control": False,
             "return_control_map": False,
             "prompt": "A herd of goats grazing under the sunset",
-            "ddim_steps": 20,
+            "ddim_steps": 30,
             "n_iter": 1,
             "model": stable_cascade_base_model_name,
             "source_image": Image.open("images/test_mountains.png"),
@@ -187,6 +193,7 @@ class TestHordeInferenceCascade:
             pil_image,
         )
 
+    @pytest.mark.slow
     def test_cascade_image_remix_double(
         self,
         stable_cascade_base_model_name: str,
@@ -207,7 +214,7 @@ class TestHordeInferenceCascade:
             "image_is_control": False,
             "return_control_map": False,
             "prompt": "A herd of goats grazing",
-            "ddim_steps": 20,
+            "ddim_steps": 30,
             "n_iter": 1,
             "model": stable_cascade_base_model_name,
             "source_image": Image.open("images/test_mountains.png"),
@@ -230,6 +237,7 @@ class TestHordeInferenceCascade:
             pil_image,
         )
 
+    @pytest.mark.slow
     def test_cascade_image_remix_double_weak(
         self,
         stable_cascade_base_model_name: str,
@@ -250,7 +258,7 @@ class TestHordeInferenceCascade:
             "image_is_control": False,
             "return_control_map": False,
             "prompt": "A herd of goats grazing",
-            "ddim_steps": 20,
+            "ddim_steps": 30,
             "n_iter": 1,
             "model": stable_cascade_base_model_name,
             "source_image": Image.open("images/test_mountains.png"),
@@ -274,6 +282,7 @@ class TestHordeInferenceCascade:
             pil_image,
         )
 
+    @pytest.mark.slow
     def test_cascade_image_remix_triple(
         self,
         stable_cascade_base_model_name: str,
@@ -294,7 +303,7 @@ class TestHordeInferenceCascade:
             "image_is_control": False,
             "return_control_map": False,
             "prompt": "Baking Sun",
-            "ddim_steps": 20,
+            "ddim_steps": 30,
             "n_iter": 1,
             "model": stable_cascade_base_model_name,
             "source_image": Image.open("images/test_mountains.png"),
@@ -318,4 +327,67 @@ class TestHordeInferenceCascade:
         assert check_single_inference_image_similarity(
             f"images_expected/{img_filename}",
             pil_image,
+        )
+
+    @pytest.mark.slow
+    def test_cascade_text_to_image_hires_2pass(
+        self,
+        hordelib_instance: HordeLib,
+        stable_cascade_base_model_name: str,
+    ):
+        data = {
+            "sampler_name": "k_euler",
+            "cfg_scale": 4,
+            "denoising_strength": 1.0,
+            "hires_fix_denoising_strength": 0.5,
+            "seed": 1312,
+            "height": 1536,
+            "width": 1024,
+            "karras": False,
+            "tiling": False,
+            "hires_fix": True,
+            "clip_skip": 1,
+            "control_type": None,
+            "image_is_control": False,
+            "return_control_map": False,
+            "prompt": (
+                "Lucid Creations, Deep Forest, Moss, ethereal, dreamlike, surreal, "
+                "beautiful, illustration, incredible detail, 8k, abstract"
+            ),
+            "ddim_steps": 30,
+            "n_iter": 1,
+            "model": stable_cascade_base_model_name,
+        }
+
+        pil_image = hordelib_instance.basic_inference_single_image(data).image
+        assert pil_image is not None
+        assert isinstance(pil_image, Image.Image)
+
+        img_filename = "stable_cascade_text_to_image_2pass.png"
+        pil_image.save(f"images/{img_filename}", quality=100)
+
+        # Check that denoising strength works
+        data["hires_fix_denoising_strength"] = 0
+        pil_image2 = hordelib_instance.basic_inference_single_image(data).image
+        assert pil_image2 is not None
+        assert isinstance(pil_image2, Image.Image)
+
+        img_filename_denoise_0 = "stable_cascade_text_to_image_2pass_denoise_0.png"
+        pil_image2.save(f"images/{img_filename_denoise_0}", quality=100)
+
+        assert pil_image2 is not None
+        assert isinstance(pil_image2, Image.Image)
+        with pytest.raises(AssertionError):
+            check_single_inference_image_similarity(
+                pil_image2,
+                pil_image,
+                exception_on_fail=True,
+            )
+        assert check_single_inference_image_similarity(
+            f"images_expected/{img_filename}",
+            pil_image,
+        )
+        assert check_single_inference_image_similarity(
+            f"images_expected/{img_filename_denoise_0}",
+            pil_image2,
         )

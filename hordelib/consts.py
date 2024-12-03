@@ -6,7 +6,7 @@ from strenum import StrEnum
 
 from hordelib.config_path import get_hordelib_path
 
-COMFYUI_VERSION = "a7dd82e668bfaf7fac365a4e73a1ba1acf224fbb"
+COMFYUI_VERSION = "839ed3368efd0f61a2b986f57fe9e0698fd08e9f"
 """The exact version of ComfyUI version to load."""
 
 REMOTE_PROXY = ""
@@ -42,6 +42,7 @@ class MODEL_CATEGORY_NAMES(StrEnum):
     ti = auto()
     blip = auto()
     clip = auto()
+    miscellaneous = auto()
 
 
 # Default model managers to load
@@ -55,6 +56,7 @@ DEFAULT_MODEL_MANAGERS = {
     # MODEL_CATEGORY_NAMES.safety_checker: True,
     MODEL_CATEGORY_NAMES.lora: True,
     MODEL_CATEGORY_NAMES.ti: True,
+    MODEL_CATEGORY_NAMES.miscellaneous: True,
 }
 """The default model managers to load."""  # XXX Clarify
 
@@ -68,6 +70,7 @@ MODEL_DB_NAMES = {
     MODEL_CATEGORY_NAMES.safety_checker: MODEL_CATEGORY_NAMES.safety_checker,
     MODEL_CATEGORY_NAMES.lora: MODEL_CATEGORY_NAMES.lora,
     MODEL_CATEGORY_NAMES.ti: MODEL_CATEGORY_NAMES.ti,
+    MODEL_CATEGORY_NAMES.miscellaneous: MODEL_CATEGORY_NAMES.miscellaneous,
 }
 """The name of the json file (without the extension) of the corresponding model database."""
 
@@ -81,5 +84,6 @@ MODEL_FOLDER_NAMES = {
     MODEL_CATEGORY_NAMES.safety_checker: MODEL_CATEGORY_NAMES.safety_checker,
     MODEL_CATEGORY_NAMES.lora: MODEL_CATEGORY_NAMES.lora,
     MODEL_CATEGORY_NAMES.ti: MODEL_CATEGORY_NAMES.ti,
+    MODEL_CATEGORY_NAMES.miscellaneous: MODEL_CATEGORY_NAMES.miscellaneous,
 }
 """The folder name on disk where the models are stored in AIWORKER_CACHE_HOME."""

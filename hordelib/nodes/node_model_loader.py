@@ -1,15 +1,21 @@
 # node_model_loader.py
 # Simple proof of concept custom node to load models.
 
+from pathlib import Path
+
 import comfy.model_management
 import comfy.sd
 import folder_paths  # type: ignore
 import torch
 from loguru import logger
 
+from hordelib.comfy_horde import log_free_ram
 from hordelib.shared_model_manager import SharedModelManager
 
 
+# Don't let the name fool you, this class is trying to load all the files that will be necessary
+# for a given comfyUI workflow. That includes loras, etc.
+# TODO: Rename to HordeWorkflowModelsLoader ;)
 class HordeCheckpointLoader:
     @classmethod
     def INPUT_TYPES(s):
@@ -35,10 +41,11 @@ class HordeCheckpointLoader:
         horde_model_name: str,
         ckpt_name: str | None = None,
         file_type: str | None = None,
-        output_vae=True,
-        output_clip=True,
+        output_vae=True,  # this arg is required by comfyui internals
+        output_clip=True,  # this arg is required by comfyui internals
         preloading=False,
     ):
+        log_free_ram()
         if file_type is not None:
             logger.debug(f"Loading model {horde_model_name}:{file_type}")
         else:
@@ -46,6 +53,9 @@ class HordeCheckpointLoader:
         logger.debug(f"Will load Loras: {will_load_loras}, seamless tiling: {seamless_tiling_enabled}")
         if ckpt_name:
             logger.debug(f"Checkpoint name: {ckpt_name}")
+            # Check if the checkpoint name is a path
+            if Path(ckpt_name).is_absolute():
+                logger.debug("Checkpoint name is an absolute path.")
 
         if preloading:
             logger.debug("Preloading model.")
@@ -69,7 +79,7 @@ class HordeCheckpointLoader:
                 make_regular_vae(same_loaded_model[0][2])
 
             logger.debug("Model was previously loaded, returning it.")
-
+            log_free_ram()
             return same_loaded_model[0]
 
         if not ckpt_name:
@@ -87,13 +97,34 @@ class HordeCheckpointLoader:
                 else:
                     # If there's no file_type passed, we follow the previous approach and pick the first file
                     # (There should be only one)
-                    ckpt_name = file_entry["file_path"].name
+                    if file_entry["file_path"].is_absolute():
+                        ckpt_name = str(file_entry["file_path"])
+                    else:
+                        ckpt_name = file_entry["file_path"].name
                     break
 
         # Clear references so comfy can free memory as needed
         SharedModelManager.manager._models_in_ram = {}
 
-        ckpt_path = folder_paths.get_full_path("checkpoints", ckpt_name)
+        # TODO: Currently we don't preload the layer_diffuse tensors which can potentially be big
+        # (3G for SDXL). So they will be loaded during runtime, and their memory usage will be
+        # handled by comfy as with any lora.
+        # Potential improvement here is to preload these models at this point
+        # And then just pass their reference to layered_diffusion.py, but that would require
+        # Quite a bit of refactoring.
+
+        if ckpt_name is not None and Path(ckpt_name).is_absolute():
+            ckpt_path = ckpt_name
+        elif ckpt_name is not None:
+            full_path = folder_paths.get_full_path("checkpoints", ckpt_name)
+
+            if full_path is None:
+                raise ValueError(f"Checkpoint {ckpt_name} not found.")
+
+            ckpt_path = full_path
+        else:
+            raise ValueError("No checkpoint name provided.")
+
         with torch.no_grad():
             result = comfy.sd.load_checkpoint_guess_config(
                 ckpt_path,
@@ -111,6 +142,7 @@ class HordeCheckpointLoader:
             result[0].model.apply(make_regular)
             make_regular_vae(result[2])
 
+        log_free_ram()
         return result
 
 

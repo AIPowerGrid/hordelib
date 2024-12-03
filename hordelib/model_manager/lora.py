@@ -44,10 +44,10 @@ class LoraModelManager(BaseModelManager):
     )
     LORA_API = "https://civitai.com/api/v1/models?types=LORA&sort=Highest%20Rated&primaryFileOnly=true"
     MAX_RETRIES = 10 if not TESTS_ONGOING else 3
-    MAX_DOWNLOAD_THREADS = 5 if not TESTS_ONGOING else 15
+    MAX_DOWNLOAD_THREADS = 5 if not TESTS_ONGOING else 75
     RETRY_DELAY = 3 if not TESTS_ONGOING else 0.2
     """The time to wait between retries in seconds"""
-    REQUEST_METADATA_TIMEOUT = 20  # Longer because civitai performs poorly on metadata requests for more than 5 models
+    REQUEST_METADATA_TIMEOUT = 35  # Longer because civitai performs poorly on metadata requests for more than 5 models
     """The maximum time for no data to be received before we give up on a metadata fetch, in seconds"""
     REQUEST_DOWNLOAD_TIMEOUT = 10 if not TESTS_ONGOING else 1
     """The maximum time for no data to be received before we give up on a download, in seconds
@@ -426,13 +426,13 @@ class LoraModelManager(BaseModelManager):
             logger.debug(f"Rejecting LoRa {lora.get('name')} because it doesn't have a url")
             return None
         # We don't want to start downloading GBs of a single LoRa.
-        # We just ignore anything over 150Mb. Them's the breaks...
+        # We just ignore anything over 400Mb. Them's the breaks...
         if (
             lora["versions"][lora_version]["adhoc"]
-            and lora["versions"][lora_version]["size_mb"] > 220
+            and lora["versions"][lora_version]["size_mb"] > 400
             and lora["id"] not in self._default_lora_ids
         ):
-            logger.debug(f"Rejecting LoRa {lora.get('name')} version {lora_version} because its size is over 220Mb.")
+            logger.debug(f"Rejecting LoRa {lora.get('name')} version {lora_version} because its size is over 400Mb.")
             return None
         if lora["versions"][lora_version]["adhoc"] and lora["nsfw"] and not self.nsfw:
             logger.debug(f"Rejecting LoRa {lora.get('name')} because worker is SFW.")
@@ -949,7 +949,10 @@ class LoraModelManager(BaseModelManager):
             time.sleep(0.2)
         loras_to_delete = self.find_unused_loras()
         for lora_filename in loras_to_delete:
-            self.delete_lora_files(lora_filename)
+            try:
+                self.delete_lora_files(lora_filename)
+            except FileNotFoundError:
+                logger.warning(f"Expected to delete lora file {lora_filename} but it was not found.")
         return loras_to_delete
 
     def delete_lora_files(self, lora_filename: str):
