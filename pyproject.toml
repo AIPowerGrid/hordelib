@@ -3,12 +3,12 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hordelib"
-description = "A thin wrapper around ComfyUI to allow use by AI Horde."
+name = "horde-engine"
+description = "A wrapper around ComfyUI to allow use by AI Horde."
 authors = [
-    {name = "Jug", email = "jugdev@proton.me"},
-    {name = "db0", email = "mail@dbzer0.com"},
     {name = "tazlin", email = "tazlin.on.github@gmail.com"},
+    {name = "db0", email = "mail@dbzer0.com"},
+    {name = "Jug", email = "jugdev@proton.me"},
 ]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,7 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
 ]
 
 # Don't specify dynamic deps for tox, only for build
@@ -25,9 +25,9 @@ dynamic=["version"]
 #dynamic=["version", "dependencies"]
 
 [project.urls]
-"Homepage" = "https://github.com/jug-dev/hordelib"
-"Bug Tracker" = "https://github.com/jug-dev/hordelib/issues"
-"Changelog" = "https://github.com/jug-dev/hordelib/blob/releases/CHANGELOG.md"
+"Homepage" = "https://github.com/Haidra-Org/hordelib"
+"Bug Tracker" = "https://github.com/Haidra-Org/hordelib/issues"
+"Changelog" = "https://github.com/Haidra-Org/hordelib/blob/releases/CHANGELOG.md"
 
 [tool.setuptools]
 license-files = ["LICENSE", "CHANGELOG*"]
@@ -45,7 +45,7 @@ hordelib = "hordelib"
 
 
 [options.index-client]
-extra-index-urls = ["https://download.pytorch.org/whl/cu118"]
+extra-index-urls = ["https://download.pytorch.org/whl/cu121"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -60,6 +60,12 @@ filterwarnings = [
 testpaths = [
     "tests"
 ]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "default_sd15_model: marks tests as default_sd15_model (deselect with '-m \"not default_sd15_model\"')",
+    "default_sdxl_model: marks tests as default_sdxl_model (deselect with '-m \"not default_sdxl_model\"')",
+    "refined_sdxl_model: marks tests as refined_sdxl_model (deselect with '-m \"not refined_sdxl_model\"')",
+]
 
 [tool.black]
 line-length = 119
@@ -69,6 +75,8 @@ exclude = '''
     ComfyUI
   | \.tox
   | comfy_controlnet_preprocessors
+  | comfy_qr
+  | comfyui_layerdiffuse
   | facerestore
   | build
 )/
@@ -76,7 +84,7 @@ exclude = '''
 
 [tool.ruff] # XXX this isn't part of CI yet
 line-length=119
-exclude=["ComfyUI", "comfy_controlnet_preprocessors", "facerestore", "build"]
+exclude=["ComfyUI", "comfy_controlnet_preprocessors", "facerestore_cf", "comfy_qr", "comfyui_layerdiffuse", "build"]
 ignore=[
     # "F401", # imported but unused
     "E402", # Module level import not at top of file

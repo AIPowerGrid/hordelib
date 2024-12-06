@@ -1,7 +1,7 @@
 import os
 
 import comfy.utils
-import folder_paths
+import folder_paths  # type: ignore
 from loguru import logger
 
 
@@ -27,11 +27,18 @@ class HordeLoraLoader:
     CATEGORY = "loaders"
 
     def load_lora(self, model, clip, lora_name, strength_model, strength_clip):
+        from hordelib.comfy_horde import log_free_ram
+
+        log_free_ram()
+
         _test_exception = os.getenv("FAILURE_TEST", False)
         if _test_exception:
             raise Exception("This tests exceptions being thrown from within the pipeline")
 
+        logger.debug(f"Loading lora {lora_name} through our custom node")
+
         if strength_model == 0 and strength_clip == 0:
+            logger.debug("Strengths are 0, skipping lora loading")
             return (model, clip)
 
         if lora_name is None or lora_name == "" or lora_name == "None":
@@ -52,7 +59,6 @@ class HordeLoraLoader:
             return (model, clip)
 
         lora_path = folder_paths.get_full_path("loras", lora_name)
-
         lora = None
         if self.loaded_lora is not None:
             if self.loaded_lora[0] == lora_path:
@@ -62,12 +68,18 @@ class HordeLoraLoader:
                 self.loaded_lora = None
                 del temp
 
-        if lora is None:
-            lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
-            self.loaded_lora = (lora_path, lora)
+        try:
+            with logger.catch(reraise=True):
+                if lora is None:
+                    lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
+                    self.loaded_lora = (lora_path, lora)
 
-        model_lora, clip_lora = comfy.sd.load_lora_for_models(model, clip, lora, strength_model, strength_clip)
-        return (model_lora, clip_lora)
+                model_lora, clip_lora = comfy.sd.load_lora_for_models(model, clip, lora, strength_model, strength_clip)
+                log_free_ram()
+                return (model_lora, clip_lora)
+        except Exception as e:
+            logger.error(f"Error loading lora {lora_name}: {e}")
+            return (model, clip)
 
 
 NODE_CLASS_MAPPINGS = {"HordeLoraLoader": HordeLoraLoader}

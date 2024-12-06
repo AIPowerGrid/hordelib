@@ -30,6 +30,7 @@ _temp_reference_lookup = {
     MODEL_CATEGORY_NAMES.esrgan: MODEL_REFERENCE_CATEGORY.esrgan,
     MODEL_CATEGORY_NAMES.gfpgan: MODEL_REFERENCE_CATEGORY.gfpgan,
     MODEL_CATEGORY_NAMES.safety_checker: MODEL_REFERENCE_CATEGORY.safety_checker,
+    MODEL_CATEGORY_NAMES.miscellaneous: MODEL_REFERENCE_CATEGORY.miscellaneous,
 }
 
 
@@ -137,22 +138,7 @@ class BaseModelManager(ABC):
         )
 
     def download_model_reference(self) -> dict:
-        try:
-            logger.debug(f"Downloading Model Reference for {self.models_db_name}")
-            response = requests.get(self.remote_db)
-            logger.debug("Downloaded Model Reference successfully")
-            models = response.json()
-            logger.info("Updated Model Reference from remote.")
-            return models
-        except Exception as e:  # XXX Double check and/or rework this
-            logger.error(
-                f"Download failed: {e}",
-            )
-            logger.warning("Model Reference not downloaded, using local copy")
-            if self.models_db_path.exists():
-                return json.loads(self.models_db_path.read_text())
-            logger.error("No local copy of Model Reference found!")
-            return {}
+        raise NotImplementedError("Downloading model databases is no longer supported within hordelib.")
 
     def get_free_ram_mb(self) -> int:
         """Returns the amount of free RAM in MB rounded down to the nearest integer.
@@ -420,15 +406,24 @@ class BaseModelManager(ABC):
         Returns True if the file exists, False otherwise
         """
         parsed_full_path = Path(f"{self.model_folder_path}/{file_path}")
+        is_custom_model = False
+        if isinstance(file_path, str):
+            check_path = Path(file_path)
+            if check_path.is_absolute():
+                parsed_full_path = Path(file_path)
+                is_custom_model = True
+        if isinstance(file_path, Path) and file_path.is_absolute():
+            parsed_full_path = Path(file_path)
+            is_custom_model = True
         if parsed_full_path.suffix == ".part":
             logger.debug(f"File {file_path} is a partial download, skipping")
             return False
         sha_file_path = Path(f"{self.model_folder_path}/{parsed_full_path.stem}.sha256")
 
-        if parsed_full_path.exists() and not sha_file_path.exists():
+        if parsed_full_path.exists() and not sha_file_path.exists() and not is_custom_model:
             self.get_file_sha256_hash(parsed_full_path)
 
-        return parsed_full_path.exists() and sha_file_path.exists()
+        return parsed_full_path.exists() and (sha_file_path.exists() or is_custom_model)
 
     def download_file(
         self,
@@ -739,6 +734,7 @@ class BaseModelManager(ABC):
         model_files = self.get_model_filenames(model_name)
         for file_entry in model_files:
             if not self.is_file_available(file_entry["file_path"]):
+                logger.debug([file_entry["file_path"], self.is_file_available(file_entry["file_path"])])
                 return False
         return True
 
