@@ -122,6 +122,7 @@ class Installer:
         cls.remove_local_comfyui_changes()
         cls._run("git checkout master", get_comfyui_path())
         cls._run("git pull", get_comfyui_path())
+        cls._run(f"git fetch origin {comfy_version}", get_comfyui_path())
         cls._run(f"git checkout {comfy_version}", get_comfyui_path())
 
     @classmethod

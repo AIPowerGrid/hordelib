@@ -6,12 +6,13 @@ from strenum import StrEnum
 
 from hordelib.config_path import get_hordelib_path
 
-COMFYUI_VERSION = "73e04987f7e0f14bdee9baa0aafe61cf7f42a8b2"
-"""The exact version of ComfyUI version to load."""
+# Target the release tag v0.3.31 for HiDream E1 and CUDA 12.8/Blackwell support
+COMFYUI_VERSION = "v0.3.31"
+"""The exact version/tag of ComfyUI version to load."""
 
 REMOTE_PROXY = ""
 
-REMOTE_MODEL_DB = "https://raw.githubusercontent.com/db0/AI-Horde-image-model-reference/main/"
+REMOTE_MODEL_DB = "https://raw.githubusercontent.com/AIPowerGrid/grid-image-model-reference/main/"
 """The default base endpoint where to find model databases. See MODEL_DB_NAMES for valid database names."""
 
 RELEASE_VERSION = (get_hordelib_path() / "_version.py").exists()

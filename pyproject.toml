@@ -45,7 +45,8 @@ hordelib = "hordelib"
 
 
 [options.index-client]
-extra-index-urls = ["https://download.pytorch.org/whl/cu121"]
+# extra-index-urls = ["https://download.pytorch.org/whl/cu121"]
+extra-index-urls = ["https://download.pytorch.org/whl/cu128"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

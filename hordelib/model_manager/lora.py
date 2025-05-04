@@ -36,12 +36,14 @@ TESTS_ONGOING = os.getenv("TESTS_ONGOING", "0") == "1"
 
 AIWORKER_LORA_CACHE_SIZE_DEFAULT = 10 * 1024  # 10GB
 
+# Default values for LoRA model reference
+LORA_DEFAULTS = "https://raw.githubusercontent.com/AIPowerGrid/grid-image-model-reference/main/lora.json"
+LORA_VERSION_DEFAULTS = (
+    "https://raw.githubusercontent.com/AIPowerGrid/grid-image-model-reference/main/lora_versions.json"
+)
+
 
 class LoraModelManager(BaseModelManager):
-    LORA_DEFAULTS = "https://raw.githubusercontent.com/Haidra-Org/AI-Horde-image-model-reference/main/lora.json"
-    LORA_VERSIONS_DEFAULTS = (
-        "https://raw.githubusercontent.com/Haidra-Org/AI-Horde-image-model-reference/main/lora_versions.json"
-    )
     LORA_API = "https://civitai.com/api/v1/models?types=LORA&sort=Highest%20Rated&primaryFileOnly=true"
     MAX_RETRIES = 10 if not TESTS_ONGOING else 3
     MAX_DOWNLOAD_THREADS = 5 if not TESTS_ONGOING else 75

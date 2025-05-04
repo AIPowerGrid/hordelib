@@ -26,7 +26,7 @@ The goal here is to be able to design inference pipelines in the excellent Comfy
 
 If being installed from pypi, use a requirements file of the form:
 ```
---extra-index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://download.pytorch.org/whl/cu128
 hordelib
 
 ...your other dependencies...
@@ -184,7 +184,7 @@ Contains the above pipeline JSON files converted to the format required by the b
 
 In this example we install the dependencies in the OS default environment. When using the git version of `hordelib`, from the project root:
 
-`pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu118 --upgrade`
+`pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu128 --upgrade`
 
 Ensure ComfyUI is installed, one way is running the tests:
 
@@ -230,7 +230,7 @@ Here's an example:
 
 Start in a new empty directory. Create requirements.txt:
 ```
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cu128
 hordelib
 ```
 

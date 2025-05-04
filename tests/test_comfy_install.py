@@ -1,5 +1,8 @@
 # test_comfy_install.py
 
+import subprocess
+
+from hordelib.config_path import get_comfyui_path
 from hordelib.consts import COMFYUI_VERSION
 from hordelib.install_comfy import Installer
 
@@ -35,10 +38,32 @@ class TestComfyInstall:
         # Upgrade to standard version
         Installer.install(COMFYUI_VERSION)
 
+        # Resolve the COMFYUI_VERSION (tag or hash) to its actual commit hash
+        process = subprocess.run(
+            f"git rev-parse {COMFYUI_VERSION}",
+            cwd=str(get_comfyui_path()),
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        expected_commit_hash = process.stdout.strip()
+
         # Should now be upgraded
         installed_version = Installer.get_commit_hash()
-        assert installed_version == COMFYUI_VERSION
+        assert installed_version == expected_commit_hash
 
     def test_get_hash(self):
         comfyhash = Installer.get_commit_hash()
-        assert comfyhash == COMFYUI_VERSION
+        # Resolve the COMFYUI_VERSION tag to its commit hash for comparison
+        process = subprocess.run(
+            f"git rev-parse {COMFYUI_VERSION}",
+            cwd=str(get_comfyui_path()),
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        expected_commit_hash = process.stdout.strip()
+        # assert comfyhash == COMFYUI_VERSION
+        assert comfyhash == expected_commit_hash
