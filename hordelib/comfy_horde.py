@@ -88,14 +88,15 @@ _comfy_load_torch_file: types.FunctionType
 _comfy_model_loading: types.ModuleType
 _comfy_free_memory: Callable[[float, torch.device, list], None]
 """Will aggressively unload models from memory"""
-_comfy_cleanup_models: Callable[[bool], None]
+_comfy_cleanup_models: Callable
 """Will unload unused models from memory"""
-_comfy_soft_empty_cache: Callable[[bool], None]
+_comfy_soft_empty_cache: Callable
 """Triggers comfyui and torch to empty their caches"""
 
 _comfy_is_changed_cache_get: Callable
 _comfy_model_patcher_load: Callable
 _comfy_load_calculate_weight: Callable
+_comfy_text_encoder_initial_device: Callable
 
 _comfy_interrupt_current_processing: types.FunctionType
 
@@ -202,7 +203,7 @@ def do_comfy_import(
     global _comfy_folder_names_and_paths, _comfy_supported_pt_extensions
     global _comfy_load_checkpoint_guess_config
     global _comfy_get_torch_device, _comfy_get_free_memory, _comfy_get_total_memory
-    global _comfy_load_torch_file, _comfy_model_loading
+    global _comfy_load_torch_file, _comfy_model_loading, _comfy_text_encoder_initial_device
     global _comfy_free_memory, _comfy_cleanup_models, _comfy_soft_empty_cache
     global _canny, _hed, _leres, _midas, _mlsd, _openpose, _pidinet, _uniformer
 
@@ -257,6 +258,10 @@ def do_comfy_import(
         from comfy.model_management import cleanup_models as _comfy_cleanup_models
         from comfy.model_management import soft_empty_cache as _comfy_soft_empty_cache
         from comfy.model_management import interrupt_current_processing as _comfy_interrupt_current_processing
+        from comfy.model_management import text_encoder_initial_device as _comfy_text_encoder_initial_device
+
+        comfy.model_management.text_encoder_initial_device = text_encoder_initial_device_hijack  # type: ignore
+
         from comfy.utils import load_torch_file as _comfy_load_torch_file
         from comfy_extras.chainner_models import model_loading as _comfy_model_loading
 
@@ -329,6 +334,7 @@ def _load_models_gpu_hijack(*args, **kwargs):
     global _comfy_current_loaded_models
     if found_model_to_skip:
         logger.debug("Not overriding model load")
+        kwargs["memory_required"] = 1e30
         _comfy_load_models_gpu(*args, **kwargs)
         return
 
@@ -415,7 +421,14 @@ def IsChangedCache_get_hijack(self, *args, **kwargs):
     return result
 
 
+def text_encoder_initial_device_hijack(*args, **kwargs):
+    # This ensures clip models are loaded on the CPU first
+    return torch.device("cpu")
+
+
 def unload_all_models_vram():
+    global _comfy_current_loaded_models
+
     log_free_ram()
 
     from hordelib.shared_model_manager import SharedModelManager
@@ -444,6 +457,8 @@ def unload_all_models_vram():
 
 
 def unload_all_models_ram():
+    global _comfy_current_loaded_models
+
     log_free_ram()
     from hordelib.shared_model_manager import SharedModelManager
 
@@ -456,10 +471,17 @@ def unload_all_models_ram():
     for model in _comfy_current_loaded_models:
         all_devices.add(model.device)
 
+    all_devices.add(get_torch_device())
+
     with torch.no_grad():
         for device in all_devices:
             logger.debug(f"Freeing memory on device {device}")
             _comfy_free_memory(1e30, device)
+
+        log_free_ram()
+        logger.debug("Freeing memory on CPU")
+        _comfy_free_memory(1e30, torch.device("cpu"))
+
         log_free_ram()
 
         logger.debug("Cleaning up models")
@@ -944,7 +966,7 @@ class Comfy_Horde:
                 if self.aggressive_unloading:
                     global _comfy_cleanup_models
                     logger.debug("Cleaning up models")
-                    _comfy_cleanup_models(False)
+                    _comfy_cleanup_models()
                     _comfy_soft_empty_cache()
 
         stdio.replay()
